@@ -1,1 +1,1 @@
-# Latent_Factor_Model_Recommendation_System
+# Latent Factor Model Based Recommendation Systems
