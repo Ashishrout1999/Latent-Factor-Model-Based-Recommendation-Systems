@@ -6,4 +6,4 @@ This repository consists of latent factor based models popularly used in collabo
 ![Sample Recommendation](Screenshots/Sample_Recommendation.png?raw=True)
 
 ## Sample Explanation
-![Sample Explanation](https://github.com/Ashishrout1999/Latent-Factor-Model-Based-Recommendation-Systems/tree/main/Screenshots/Sample_Explanation.png?raw=True)
+![Sample Explanation](Screenshots/Sample_Explanation.png?raw=True)
