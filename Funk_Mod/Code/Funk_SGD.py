@@ -170,9 +170,10 @@ for learning_rate in lr_list:
             test_ratings = test_data[ : , 2]
             pred_test_ratings = pred_results(test_data, mean_rating, user_bias, item_bias, user_factor, item_factor)
             test_error = calc_rmse(test_ratings, pred_test_ratings)
-            print('Test Error is {0:.6f}'.format(test_error))
+            
             print('Training Error is {0:.6f}'.format(train_error_list[-1]))
             print('Validation Error is {0:.6f}'.format(val_error_list[-1]))
+            print('Test Error is {0:.6f}'.format(test_error))
             
             error = pd.DataFrame()
             error['Test Error'] = [test_error]
