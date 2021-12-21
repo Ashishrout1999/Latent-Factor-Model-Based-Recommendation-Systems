@@ -7,6 +7,7 @@ Created on Thu Nov 11 14:11:07 2021
 
 import numpy as np
 import pandas as pd
+from numba import jit
 import matplotlib.pyplot as plt
 import collections
 import time
@@ -58,6 +59,7 @@ val_data = pd.read_csv('../Data_Split/val.csv').to_numpy()[:, 1 :]
 test_data = pd.read_csv('../Data_Split/test.csv').to_numpy()[:, 1:]
 
 # Predicting movie ratings with trained weights
+@jit(nopython=True)
 def pred_results(data, mean_rating, user_bias, item_bias, user_factor, item_factor):
     prediction = []
     num_data = data.shape[0]
@@ -73,11 +75,13 @@ def pred_results(data, mean_rating, user_bias, item_bias, user_factor, item_fact
     return prediction
 
 # Root Mean Squared Error Calculation
+@jit(nopython=True)
 def calc_rmse(y_true, y_pred):
     return np.sqrt(np.sum(np.square(y_true - y_pred))/len(y_true))
 
 
 # Stochastic Gradient Descent to update weights
+@jit(nopython=True)
 def sgd_funk(train_data, val_data, num_users, num_items, num_factors, num_epochs, learning_rate, reg_param):
     mean_rating = np.mean(train_data[:, 2])
     user_bias = np.zeros(num_users)
@@ -88,7 +92,7 @@ def sgd_funk(train_data, val_data, num_users, num_items, num_factors, num_epochs
     train_error_list = []
     val_error_list = []
     
-    start_time = time.time()
+    #start_time = time.time()
     for i in range(num_epochs):
         train_ratings = train_data[ : , 2]
         pred_train_ratings = []
@@ -117,35 +121,20 @@ def sgd_funk(train_data, val_data, num_users, num_items, num_factors, num_epochs
         
         #print('Validation error after {}th epoch is {}'.format(i+1, val_error))
         
-        rng = np.random.default_rng(seed = 5)
-        rng.shuffle(train_data)
-
-    end_time = time.time()
-    time_taken = round(end_time - start_time, 2)
+        #rng = np.random.default_rng(seed = 5)
+        #rng.shuffle(train_data)
+        np.random.shuffle(train_data)
+    #end_time = time.time()
+    #time_taken = round(end_time - start_time, 2)
     
-    print('Time required for {} epochs is {} second'.format(num_epochs, time_taken))
-    print('Training Error is {0:.6f}'.format(train_error))
-    print('Validation Error is {0:.6f}'.format(val_error))
+    #print('Time required for {} epochs is {} second'.format(num_epochs, time_taken))
+    #print('Training Error is {0:.6f}'.format(train_error))
+    #print('Validation Error is {0:.6f}'.format(val_error))
     
-    error_df = pd.DataFrame()
-    error_df['Training Error'] = train_error_list
-    error_df.to_csv('../Results/Train/Error_Train_lr{}_reg{}_factor{}_epoch{}.csv'.format(learning_rate, reg_param, num_factors, num_epochs))
-
-    error_df = pd.DataFrame()
-    error_df['Validation Error'] = val_error_list
-    error_df.to_csv('../Results/Validate/Error_Train_lr{}_reg{}_factor{}_epoch{}.csv'.format(learning_rate, reg_param, num_factors, num_epochs))
+   
     
     
-    plt.figure()
-    plt.plot(np.arange(len(train_error_list)) + 1, train_error_list, c = 'red', label = 'Training Error')
-    plt.plot(np.arange(len(val_error_list)) + 1, val_error_list, c = 'blue', label = 'Validation Error')
-    plt.xlabel('Epochs')
-    plt.ylabel('Root Mean Squared Error')
-    plt.title('RMSE vs Epochs During Training and Validation')
-    plt.legend()
-    plt.savefig('../Results/Figure/Error_Plot_lr{}_reg{}_factor{}_epoch{}.png'.format(learning_rate, reg_param, num_factors, num_epochs))
-    
-    return mean_rating, user_bias, item_bias, user_factor, item_factor
+    return mean_rating, user_bias, item_bias, user_factor, item_factor,train_error_list,val_error_list
     
 
 # Hyperparameters to tune
@@ -159,7 +148,8 @@ num_epochs = 100
 for learning_rate in lr_list:
     for reg_param in reg_list:
         for num_factors in factors_list:
-            mean_rating, user_bias, item_bias, user_factor, item_factor = sgd_funk(train_data, val_data, num_users, num_items, num_factors, num_epochs, learning_rate, reg_param)
+            start_time = time.time()
+            mean_rating, user_bias, item_bias, user_factor, item_factor,train_error_list,val_error_list = sgd_funk(train_data, val_data, num_users, num_items, num_factors, num_epochs, learning_rate, reg_param)
             
             weights = pd.DataFrame([mean_rating])
             #weights['Mean Rating'] = [mean_rating]
@@ -181,12 +171,31 @@ for learning_rate in lr_list:
             pred_test_ratings = pred_results(test_data, mean_rating, user_bias, item_bias, user_factor, item_factor)
             test_error = calc_rmse(test_ratings, pred_test_ratings)
             print('Test Error is {0:.6f}'.format(test_error))
-            
+            print('Training Error is {0:.6f}'.format(train_error_list[-1]))
+            print('Validation Error is {0:.6f}'.format(val_error_list[-1]))
             
             error = pd.DataFrame()
             error['Test Error'] = [test_error]
             error.to_csv('../Results/Test_Error/Test_error_lr{}_reg{}_factor{}_epoch{}.csv'.format(learning_rate, reg_param, num_factors, num_epochs))
             
+            error_df = pd.DataFrame()
+            error_df['Training Error'] = train_error_list
+            error_df.to_csv('../Results/Train/Error_Train_lr{}_reg{}_factor{}_epoch{}.csv'.format(learning_rate, reg_param, num_factors, num_epochs))
 
+            error_df = pd.DataFrame()
+            error_df['Validation Error'] = val_error_list
+            error_df.to_csv('../Results/Validate/Error_Train_lr{}_reg{}_factor{}_epoch{}.csv'.format(learning_rate, reg_param, num_factors, num_epochs))
+            
+            plt.figure()
+            plt.plot(np.arange(len(train_error_list)) + 1, train_error_list, c = 'red', label = 'Training Error')
+            plt.plot(np.arange(len(val_error_list)) + 1, val_error_list, c = 'blue', label = 'Validation Error')
+            plt.xlabel('Epochs')
+            plt.ylabel('Root Mean Squared Error')
+            plt.title('RMSE vs Epochs During Training and Validation')
+            plt.legend()
+            plt.savefig('../Results/Figure/Error_Plot_lr{}_reg{}_factor{}_epoch{}.png'.format(learning_rate, reg_param, num_factors, num_epochs))
 
+            end_time = time.time()
+            time_taken = round(end_time - start_time, 2)
+            print('Time required for {} epochs is {} second'.format(num_epochs, time_taken))
 
