@@ -4,7 +4,7 @@ Created on Thu Nov 11 14:11:07 2021
 
 @author: ashish
 """
-
+from numba import jit
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -68,22 +68,32 @@ test_data = pd.read_csv('../Data_Split/test.csv').to_numpy()[:, 1:]
 
 implicit_dict = pd.DataFrame(train_data, columns = ['User', 'Item', 'Rating']).groupby(['User'])['Item'].apply(lambda grp: list(grp.value_counts().index)).to_dict()
 
+MASK = np.zeros([num_users,num_items]);
+for i in range(num_users):
+    curr_items=implicit_dict[i]
+    MASK[i][curr_items]=1
 
 # Predicting movie ratings with trained weights
-def pred_results(data, mean_rating, user_bias, item_bias, user_factor, item_factor, implicit_factor, implicit_dict):
+@jit(nopython=True)
+def pred_results(data, mean_rating, user_bias, item_bias, user_factor, item_factor, implicit_factor,MASK):
     prediction = []
     num_data = data.shape[0]
     
     for i in range(num_data):
         user_id = data[i, 0]
         item_id = data[i, 1]
-        curr_items = implicit_dict[user_id]
-        len_curr_items = len(curr_items)
+        #curr_items = implicit_dict[user_id]
+        #len_curr_items = len(curr_items)
+        
+        len_curr_items = np.sum(MASK[user_id])
+
         num_factors = user_factor.shape[1]
         curr_user_item_vector = np.zeros(num_factors)
         num_items = item_factor.shape[0]
-        mask = np.zeros(num_items)
-        mask[curr_items] = 1
+        #mask = np.zeros(num_items)
+        #mask[curr_items] = 1
+        
+        mask=MASK[user_id]
         mask = np.reshape(mask, (-1, 1))
         
         curr_user_item_vector = np.sum(np.multiply(mask, implicit_factor), axis = 0)
@@ -96,12 +106,14 @@ def pred_results(data, mean_rating, user_bias, item_bias, user_factor, item_fact
     return prediction
 
 # Root Mean Squared Error Calculation
+@jit(nopython=True)
 def calc_rmse(y_true, y_pred):
     return np.sqrt(np.sum(np.square(y_true - y_pred))/len(y_true))
 
 
 # Stochastic Gradient Descent to update weights
-def sgd_svdpp(train_data, val_data, implicit_dict, num_users, num_items, num_factors, num_epochs, learning_rate, reg_param):
+@jit(nopython=True)
+def sgd_svdpp(train_data, val_data, MASK, num_users, num_items, num_factors, num_epochs, learning_rate, reg_param):
     mean_rating = np.mean(train_data[:, 2])
     user_bias = np.zeros(num_users)
     item_bias = np.zeros(num_items)
@@ -113,7 +125,7 @@ def sgd_svdpp(train_data, val_data, implicit_dict, num_users, num_items, num_fac
     train_error_list = []
     val_error_list = []
     
-    start_time = time.time()
+    #start_time = time.time()
     for i in range(num_epochs):
         train_ratings = train_data[ : , 2]
         pred_train_ratings = []
@@ -127,12 +139,13 @@ def sgd_svdpp(train_data, val_data, implicit_dict, num_users, num_items, num_fac
             temp_user_factor = user_factor[user_id, :]
             temp_item_factor = item_factor[item_id, :]
             
-            curr_items = implicit_dict[user_id]
-            len_curr_items = len(curr_items)
-            
+            #curr_items = implicit_dict[user_id]
+            #len_curr_items = len(curr_items)
+            len_curr_items=np.sum(MASK[user_id])
             curr_user_item_vector = np.zeros(num_factors)
-            mask = np.zeros(num_items)
-            mask[curr_items] = 1
+            #mask = np.zeros(num_items)
+            #mask[curr_items] = 1
+            mask=MASK[user_id]
             mask = np.reshape(mask, (-1, 1))
         
             curr_user_item_vector = np.sum(np.multiply(mask, implicit_factor), axis = 0)
@@ -160,41 +173,20 @@ def sgd_svdpp(train_data, val_data, implicit_dict, num_users, num_items, num_fac
         #print('Training error after {}th epoch is {}'.format(i+1, train_error))
         
         val_ratings = val_data[ : , 2]
-        pred_val_ratings = pred_results(val_data, mean_rating, user_bias, item_bias, user_factor, item_factor, implicit_factor, implicit_dict)
+        pred_val_ratings = pred_results(val_data, mean_rating, user_bias, item_bias, user_factor, item_factor, implicit_factor, MASK)
         val_error = calc_rmse(val_ratings, pred_val_ratings)
         val_error_list.append(val_error)
         
         #print('Validation error after {}th epoch is {}'.format(i+1, val_error))
         
-        rng = np.random.default_rng(seed = 5)
-        rng.shuffle(train_data)
-
-    end_time = time.time()
-    time_taken = round(end_time - start_time, 2)
-    
-    print('Time required for {} epochs is {} second'.format(num_epochs, time_taken))
-    print('Training Error is {0:.6f}'.format(train_error))
-    print('Validation Error is {0:.6f}'.format(val_error))
-    
-    error_df = pd.DataFrame()
-    error_df['Training Error'] = train_error_list
-    error_df.to_csv('../Results/Train/Error_Train_lr{}_reg{}_factor{}_epoch{}.csv'.format(learning_rate, reg_param, num_factors, num_epochs))
-
-    error_df = pd.DataFrame()
-    error_df['Validation Error'] = val_error_list
-    error_df.to_csv('../Results/Validate/Error_Train_lr{}_reg{}_factor{}_epoch{}.csv'.format(learning_rate, reg_param, num_factors, num_epochs))
+        #rng = np.random.default_rng(seed = 5)
+        #rng.shuffle(train_data)
+        np.random.shuffle(train_data)
+    #end_time = time.time()
+    #time_taken = round(end_time - start_time, 2)
     
     
-    plt.figure()
-    plt.plot(np.arange(len(train_error_list)) + 1, train_error_list, c = 'red', label = 'Training Error')
-    plt.plot(np.arange(len(val_error_list)) + 1, val_error_list, c = 'blue', label = 'Validation Error')
-    plt.xlabel('Epochs')
-    plt.ylabel('Root Mean Squared Error')
-    plt.title('RMSE vs Epochs During Training and Validation')
-    plt.legend()
-    plt.savefig('../Results/Figure/Error_Plot_lr{}_reg{}_factor{}_epoch{}.png'.format(learning_rate, reg_param, num_factors, num_epochs))
-    
-    return mean_rating, user_bias, item_bias, user_factor, item_factor, implicit_factor
+    return mean_rating, user_bias, item_bias, user_factor, item_factor, implicit_factor,train_error_list,val_error_list
     
 
 
@@ -208,8 +200,9 @@ num_epochs = 250
 for learning_rate in lr_list:
     for reg_param in reg_list:
         for num_factors in factors_list:
-            mean_rating, user_bias, item_bias, user_factor, item_factor, implicit_factor = sgd_svdpp(train_data, val_data, implicit_dict, num_users, num_items, num_factors, num_epochs, learning_rate, reg_param)
-
+            start=time.time()
+            mean_rating, user_bias, item_bias, user_factor, item_factor, implicit_factor,train_error_list,val_error_list = sgd_svdpp(train_data, val_data, MASK, num_users, num_items, num_factors, num_epochs, learning_rate, reg_param)
+            end=time.time()
             weights = pd.DataFrame([mean_rating])
             #weights['Mean Rating'] = [mean_rating]
             weights.to_csv('../Weights/Mean_Rating/Weight_lr{}_reg{}_factor{}_epoch{}.csv'.format(learning_rate, reg_param, num_factors, num_epochs))
@@ -230,12 +223,36 @@ for learning_rate in lr_list:
             
             
             test_ratings = test_data[ : , 2]
-            pred_test_ratings = pred_results(test_data, mean_rating, user_bias, item_bias, user_factor, item_factor, implicit_factor, implicit_dict)
+            pred_test_ratings = pred_results(test_data, mean_rating, user_bias, item_bias, user_factor, item_factor, implicit_factor, MASK)
             test_error = calc_rmse(test_ratings, pred_test_ratings)
-            print('Test Error is {0:.6f}'.format(test_error))
+            
             
             
             error = pd.DataFrame()
             error['Test Error'] = [test_error]
             error.to_csv('../Results/Test_Error/Test_error_lr{}_reg{}_factor{}_epoch{}.csv'.format(learning_rate, reg_param, num_factors, num_epochs))
             
+            
+            error_df = pd.DataFrame()
+            error_df['Training Error'] = train_error_list
+            error_df.to_csv('../Results/Train/Error_Train_lr{}_reg{}_factor{}_epoch{}.csv'.format(learning_rate, reg_param, num_factors, num_epochs))
+
+            error_df = pd.DataFrame()
+            error_df['Validation Error'] = val_error_list
+            error_df.to_csv('../Results/Validate/Error_Train_lr{}_reg{}_factor{}_epoch{}.csv'.format(learning_rate, reg_param, num_factors, num_epochs))
+            
+            
+            plt.figure()
+            plt.plot(np.arange(len(train_error_list)) + 1, train_error_list, c = 'red', label = 'Training Error')
+            plt.plot(np.arange(len(val_error_list)) + 1, val_error_list, c = 'blue', label = 'Validation Error')
+            plt.xlabel('Epochs')
+            plt.ylabel('Root Mean Squared Error')
+            plt.title('RMSE vs Epochs During Training and Validation')
+            plt.legend()
+            plt.savefig('../Results/Figure/Error_Plot_lr{}_reg{}_factor{}_epoch{}.png'.format(learning_rate, reg_param, num_factors, num_epochs))
+            
+            time_taken=round(end-start,2)
+            print('Time required for {} epochs is {} second'.format(num_epochs, time_taken))
+            print('Training Error is {0:.6f}'.format(train_error_list[-1]))
+            print('Validation Error is {0:.6f}'.format(val_error_list[-1]))
+            print('Test Error is {0:.6f}'.format(test_error))
